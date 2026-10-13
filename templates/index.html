@@ -1,0 +1,2357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Requests · Kong HTTP Log</title>
+  <style>
+    :root {
+      --bg:            #f6f7f9;
+      --surface:       #ffffff;
+      --surface-alt:   #fafbfc;
+      --border:        #e3e6ec;
+      --border-strong: #d1d6de;
+      --ink:           #0b172d;
+      --ink-2:         #3c4557;
+      --muted:         #7a8496;
+      --green:         #0b6b4f;
+      --mint:          #eaf6ef;
+      --lime:          #c5ff00;
+      --ok-bg:         #e6f6ed;
+      --ok-fg:         #096c46;
+      --warn-bg:       #fdf1e0;
+      --warn-fg:       #8a5300;
+      --err-bg:        #fdeceb;
+      --err-fg:        #b3261e;
+      --info-bg:       #eaf1fd;
+      --info-fg:       #1c4fa1;
+      --focus:         #1155cb;
+      --ink-btn:       #101010;
+      --sidebar-w:     248px;
+      --mono: "SF Mono", Monaco, "Cascadia Code", "Roboto Mono", Consolas, monospace;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+      font-size: 14px;
+      line-height: 1.45;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    a { color: inherit; }
+
+    :focus-visible {
+      outline: 2px solid var(--focus);
+      outline-offset: 2px;
+      border-radius: 4px;
+    }
+
+    /* ---------------- Sidebar ---------------- */
+
+    .sidebar {
+      position: fixed;
+      inset: 0 auto 0 0;
+      width: var(--sidebar-w);
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      z-index: 20;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 1rem 1.25rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .brand-tile {
+      width: 34px; height: 34px;
+      flex: none;
+      border-radius: 9px;
+      background: #00110a;
+      color: var(--lime);
+      display: grid;
+      place-items: center;
+      font-size: 18px;
+      line-height: 1;
+    }
+
+    .brand-name { font-weight: 650; letter-spacing: -0.01em; }
+    .brand-sub { font-size: 12px; color: var(--muted); }
+
+    .nav { padding: 1rem 0.75rem 0; flex: none; }
+
+    .nav-label {
+      font-size: 11px;
+      font-weight: 650;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      color: var(--muted);
+      padding: 0 0.75rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      padding: 0.5rem 0.75rem;
+      border-radius: 6px;
+      color: var(--ink-2);
+      font-weight: 500;
+      border-left: 3px solid transparent;
+      text-decoration: none;
+    }
+
+    .nav-item.is-active {
+      background: var(--mint);
+      border-left-color: var(--green);
+      color: var(--green);
+      font-weight: 650;
+    }
+
+    .sidebar-foot {
+      padding: 1rem 1.25rem;
+      border-top: 1px solid var(--border);
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .sidebar-foot code {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--ink-2);
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 0.15rem 0.35rem;
+      display: inline-block;
+      margin-top: 0.35rem;
+    }
+
+
+    /* ---------------- Sidebar summary ---------------- */
+
+    .summary {
+      padding: 0.9rem 0.9rem 1rem;
+      overflow-y: auto;
+      flex: 1 1 auto;
+      min-height: 0;
+      scrollbar-width: thin;
+    }
+    .summary:empty { padding: 0; }
+
+    .sum-sec { margin-bottom: 1rem; }
+    .sum-sec:last-child { margin-bottom: 0.5rem; }
+    .sum-sec h3 {
+      font-size: 10.5px; font-weight: 700; letter-spacing: 0.07em;
+      text-transform: uppercase; color: var(--muted); margin-bottom: 0.5rem;
+    }
+    .sum-sec h3 .sum-scope {
+      font-weight: 600; letter-spacing: 0.02em; text-transform: none;
+      color: var(--border-strong);
+    }
+
+    .sum-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+    .sum-stat {
+      background: var(--surface-alt); border: 1px solid var(--border);
+      border-radius: 7px; padding: 0.45rem 0.55rem; min-width: 0;
+    }
+    .sum-stat .v {
+      font-size: 16px; font-weight: 650; letter-spacing: -0.02em;
+      font-variant-numeric: tabular-nums; line-height: 1.15;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .sum-stat .k {
+      font-size: 10px; font-weight: 650; letter-spacing: 0.05em;
+      text-transform: uppercase; color: var(--muted); margin-top: 0.1rem;
+    }
+    .sum-stat.is-wide { grid-column: 1 / -1; }
+    .sum-stat .sub {
+      font-size: 10.5px; color: var(--muted); margin-top: 0.15rem;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .sum-stat.is-err .v { color: var(--err-fg); }
+    .sum-stat.is-ok .v { color: var(--ok-fg); }
+
+    .sum-mixbar {
+      display: flex; height: 8px; border-radius: 999px;
+      overflow: hidden; background: var(--bg); margin-bottom: 0.5rem;
+    }
+    .sum-legend { display: grid; gap: 0.28rem; }
+    .sum-lrow {
+      display: flex; align-items: center; gap: 0.4rem;
+      font: inherit; font-size: 12px; background: none; border: none;
+      padding: 0; width: 100%; text-align: left; color: var(--ink-2);
+    }
+    .sum-dot { width: 8px; height: 8px; border-radius: 2px; flex: none; }
+    .sum-lval { margin-left: auto; font-variant-numeric: tabular-nums; color: var(--muted); }
+
+    .swatch-llm { background: #c3dd6a; }
+    .swatch-mcp { background: #7fb4bf; }
+    .swatch-a2a { background: #8b93bd; }
+    .swatch-api { background: #c3c8d1; }
+    .swatch-ok  { background: #c3dd6a; }
+    .swatch-err { background: #e0a3a0; }
+
+    .sum-bars { display: grid; gap: 0.45rem; }
+    .sum-bar {
+      display: block; width: 100%; text-align: left;
+      font: inherit; background: none; border: none; padding: 0;
+    }
+    .sum-bar .top { display: flex; font-size: 12px; margin-bottom: 0.18rem; }
+    .sum-bar .top span:first-child {
+      color: var(--ink-2); overflow: hidden;
+      text-overflow: ellipsis; white-space: nowrap;
+    }
+    .sum-bar .top span:last-child {
+      margin-left: auto; font-variant-numeric: tabular-nums;
+      color: var(--muted); padding-left: 0.4rem;
+    }
+    .sum-track { height: 5px; border-radius: 999px; background: var(--bg); }
+    .sum-fill { height: 5px; border-radius: 999px; background: var(--green); }
+    .sum-fill.is-alt { background: #7fb4bf; }
+
+    button.sum-bar, button.sum-lrow { cursor: pointer; }
+    button.sum-bar:hover .top span:first-child,
+    button.sum-lrow:hover { color: var(--green); }
+    button.sum-bar:hover .top span:first-child { text-decoration: underline; }
+
+    .sum-empty { font-size: 12px; color: var(--muted); font-style: italic; }
+
+    @media (max-width: 900px) { .summary { display: none; } }
+
+    /* ---------------- Layout ---------------- */
+
+    .main { margin-left: var(--sidebar-w); min-height: 100vh; }
+
+    .topbar {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 1.5rem 2rem 1.25rem;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      flex-wrap: wrap;
+    }
+
+    .crumb { font-size: 13px; color: var(--muted); }
+    .page-title { font-size: 26px; font-weight: 650; letter-spacing: -0.02em; margin-top: 0.15rem; }
+
+    .topbar-actions { display: flex; align-items: center; gap: 0.6rem; }
+
+    .content { padding: 1.5rem 2rem 3rem; }
+
+    /* ---------------- Controls ---------------- */
+
+    .control {
+      font: inherit;
+      font-size: 13px;
+      color: var(--ink);
+      background: var(--surface);
+      border: 1px solid var(--border-strong);
+      border-radius: 6px;
+      padding: 0.5rem 0.7rem;
+      cursor: pointer;
+    }
+
+    select.control {
+      appearance: none;
+      padding-right: 1.9rem;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 12 12'%3E%3Cpath fill='%237a8496' d='M6 8.5 1.5 4h9z'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 0.6rem center;
+    }
+
+    .control:hover { border-color: var(--muted); }
+
+    .btn-primary {
+      background: var(--ink-btn);
+      border-color: var(--ink-btn);
+      color: var(--lime);
+      font-weight: 700;
+      border-radius: 999px;
+      padding: 0.5rem 1.25rem;
+    }
+    .btn-primary:hover { background: #000; border-color: #000; }
+
+    /* Secondary sits next to the pill, so it takes the same silhouette. */
+    .btn-secondary {
+      border-radius: 999px;
+      padding: 0.5rem 1.15rem;
+      font-weight: 600;
+      color: var(--ink-2);
+      text-decoration: none;
+    }
+    .btn-secondary:hover { border-color: var(--muted); background: var(--surface-alt); }
+
+    .icon-btn {
+      width: 36px; height: 36px;
+      display: grid; place-items: center;
+      padding: 0;
+      border-radius: 50%;
+      font-size: 15px;
+      color: var(--ink-2);
+      text-decoration: none;
+    }
+
+    .filters {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.85rem 1rem;
+      margin-bottom: 1.25rem;
+    }
+
+    /* Single line on desktop: the search field absorbs the slack and the
+       selects are capped, so nothing is pushed onto a second row. Wrapping
+       returns below 1400px where a single line genuinely will not fit. */
+    .filters-row {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem 0.55rem;
+      flex-wrap: nowrap;
+    }
+
+    @media (max-width: 1400px) {
+      .filters-row { flex-wrap: wrap; }
+      .search-field { flex: 1 1 200px; }
+      .filter-actions { margin-left: 0; }
+    }
+
+    .filters-label {
+      font-size: 13px;
+      font-weight: 650;
+      color: var(--ink-2);
+      margin-right: 0.25rem;
+    }
+
+    .search-field { position: relative; flex: 1 1 110px; min-width: 0; }
+
+    .search-field .glyph {
+      position: absolute;
+      left: 0.65rem; top: 50%;
+      transform: translateY(-50%);
+      color: var(--muted);
+      font-size: 13px;
+      pointer-events: none;
+    }
+
+    .search-field input {
+      width: 100%;
+      min-width: 0;
+      font: inherit;
+      font-size: 13px;
+      padding: 0.5rem 0.7rem 0.5rem 2rem;
+      border: 1px solid var(--border-strong);
+      border-radius: 6px;
+      background: var(--surface);
+      color: var(--ink);
+    }
+
+    .search-field input::placeholder { color: var(--muted); }
+
+    .field-group { display: flex; align-items: center; gap: 0.4rem; flex: none; min-width: 0; }
+    .field-group label { font-size: 13px; color: var(--ink-2); white-space: nowrap; }
+    .field-group select.control {
+      max-width: 118px;
+      text-overflow: ellipsis;
+    }
+
+    .filter-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex: none;
+      margin-left: auto;
+    }
+
+    /* ---------------- Table ---------------- */
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .table-scroll { overflow-x: auto; }
+
+    table { width: 100%; border-collapse: collapse; }
+
+    th {
+      text-align: left;
+      font-size: 13px;
+      font-weight: 650;
+      color: var(--ink-2);
+      padding: 0.85rem 1.25rem;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+      white-space: nowrap;
+      position: sticky;
+      top: 0;
+      z-index: 1;
+    }
+
+    td {
+      padding: 0.9rem 1.25rem;
+      border-bottom: 1px solid var(--border);
+      vertical-align: middle;
+      white-space: nowrap;
+    }
+
+    tbody tr { cursor: pointer; }
+    tbody tr:hover { background: var(--surface-alt); }
+    tbody tr:last-child td { border-bottom: none; }
+    tbody tr.is-open { background: var(--mint); }
+
+    .col-ts { font-variant-numeric: tabular-nums; color: var(--ink); }
+    .col-uri { font-family: var(--mono); font-size: 12.5px; color: var(--ink-2); max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
+    .col-num { font-variant-numeric: tabular-nums; }
+    .col-ip { font-family: var(--mono); font-size: 12.5px; color: var(--ink-2); }
+
+    .col-model { line-height: 1.3; }
+    .model-provider {
+      display: block;
+      font-size: 11px;
+      font-weight: 650;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .model-name { display: block; font-family: var(--mono); font-size: 12.5px; color: var(--ink); }
+    .dash { color: var(--muted); }
+
+    .pill {
+      display: inline-block;
+      padding: 0.2rem 0.6rem;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 650;
+      font-variant-numeric: tabular-nums;
+    }
+    .pill-ok   { background: var(--ok-bg);   color: var(--ok-fg); }
+    .pill-warn { background: var(--warn-bg); color: var(--warn-fg); }
+    .pill-err  { background: var(--err-bg);  color: var(--err-fg); }
+    .pill-info { background: var(--info-bg); color: var(--info-fg); }
+    .pill-none { background: var(--bg);      color: var(--muted); }
+
+    .tag {
+      display: inline-block;
+      padding: 0.15rem 0.5rem;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      border: 1px solid transparent;
+    }
+    /* Lime -> teal -> ink -> neutral: a desaturated family drawn from the
+       brand palette. Deliberately no mint green here, so a type tag is never
+       mistaken for a 2xx status pill two columns away. */
+    .tag-llm { background: #eef7d4; color: #46540a; border-color: #dfeeb6; }
+    .tag-mcp { background: #dfeef1; color: #1c5b68; border-color: #cbe3e8; }
+    .tag-a2a { background: #e5e8f0; color: #343d63; border-color: #d6dbe8; }
+    .tag-api { background: #eceef1; color: #4d5665; border-color: var(--border); }
+
+    .empty {
+      padding: 4rem 2rem;
+      text-align: center;
+      color: var(--muted);
+    }
+    .empty strong { display: block; color: var(--ink); font-size: 15px; margin-bottom: 0.35rem; }
+
+    /* ---------------- Pagination ---------------- */
+
+    .pager {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 0.85rem 1.25rem;
+      border-top: 1px solid var(--border);
+      background: var(--surface);
+      flex-wrap: wrap;
+      font-size: 13px;
+      color: var(--ink-2);
+    }
+
+    .pager-nav { display: flex; align-items: center; gap: 0.4rem; }
+
+    .pager a, .pager span.pager-btn {
+      display: inline-block;
+      padding: 0.4rem 0.75rem;
+      border: 1px solid var(--border-strong);
+      border-radius: 6px;
+      text-decoration: none;
+      color: var(--ink-2);
+      background: var(--surface);
+    }
+    .pager a:hover { border-color: var(--muted); }
+    .pager span.pager-btn { color: var(--muted); background: var(--bg); cursor: not-allowed; }
+
+    /* ---------------- Detail drawer ---------------- */
+
+    .scrim {
+      position: fixed; inset: 0;
+      background: rgba(11, 23, 45, 0.35);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.18s ease;
+      z-index: 30;
+    }
+    .scrim.is-open { opacity: 1; pointer-events: auto; }
+
+    .drawer {
+      position: fixed;
+      top: 0; right: 0; bottom: 0;
+      width: min(660px, 100%);
+      background: var(--surface);
+      border-left: 1px solid var(--border);
+      box-shadow: -8px 0 32px rgba(11, 23, 45, 0.12);
+      transform: translateX(100%);
+      transition: transform 0.22s ease;
+      z-index: 31;
+      display: flex;
+      flex-direction: column;
+    }
+    .drawer.is-open { transform: translateX(0); }
+
+    .drawer-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 1.1rem 1.25rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .drawer-title { font-size: 16px; font-weight: 650; }
+    .drawer-meta { font-size: 12.5px; color: var(--muted); margin-top: 0.2rem; font-variant-numeric: tabular-nums; }
+
+    .drawer-tools {
+      display: flex;
+      gap: 0.5rem;
+      padding: 0.75rem 1.25rem;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface-alt);
+    }
+
+    .drawer-body {
+      flex: 1;
+      overflow: auto;
+      padding: 1rem 1.25rem 2rem;
+    }
+
+    .drawer-body pre {
+      font-family: var(--mono);
+      font-size: 12.5px;
+      line-height: 1.65;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .drawer-status { color: var(--muted); padding: 1rem 0; }
+
+    /* ---------------- JSON tree ---------------- */
+
+    .jt { font-family: var(--mono); font-size: 12.5px; line-height: 1.7; }
+    .jt-row { display: flex; align-items: flex-start; }
+    .jt-content { flex: 1; min-width: 0; word-break: break-word; }
+    .jt-key + .jt-str, .jt-key + .jt-num, .jt-key + .jt-bool,
+    .jt-key + .jt-null, .jt-key + .jt-punct { margin-left: 0; }
+    .jt-children { padding-left: 1.15rem; border-left: 1px solid var(--border); margin-left: 0.3rem; }
+    .jt-children[hidden], .jt-row[hidden] { display: none; }
+
+    .jt-toggle {
+      font: inherit;
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--muted);
+      width: 1.15rem;
+      flex: none;
+      text-align: left;
+      padding: 0;
+    }
+    .jt-spacer { width: 1.15rem; flex: none; }
+
+    .jt-key { color: #1a3e4d; font-weight: 600; }
+    .jt-str { color: #2f6f52; word-break: break-word; }
+    .jt-num { color: #8b1f1f; }
+    .jt-bool { color: #5b32b8; }
+    .jt-null { color: var(--muted); font-style: italic; }
+    .jt-punct { color: var(--ink-2); }
+    .jt-count { color: var(--muted); font-style: italic; }
+
+    .jt-embed {
+      font: inherit;
+      font-size: 11px;
+      margin-left: 0.5rem;
+      padding: 0.05rem 0.4rem;
+      border: 1px solid var(--border-strong);
+      border-radius: 4px;
+      background: var(--surface);
+      color: var(--ink-2);
+      cursor: pointer;
+    }
+    .jt-embed:hover { border-color: var(--muted); }
+
+
+
+    /* ---------------- Selection & export ---------------- */
+
+    .col-pick { width: 40px; padding-right: 0; }
+    .col-pick input { cursor: pointer; width: 15px; height: 15px; accent-color: var(--green); }
+
+    .col-consumer { line-height: 1.3; }
+    .consumer-name { display: block; color: var(--ink); font-size: 13.5px; }
+    .client-name {
+      display: block;
+      font-size: 11.5px;
+      color: var(--muted);
+      max-width: 160px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .selectbar {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      flex-wrap: wrap;
+      padding: 0.6rem 1.25rem;
+      background: var(--mint);
+      border-bottom: 1px solid var(--border);
+      font-size: 13px;
+      color: var(--green);
+      font-weight: 600;
+    }
+    .selectbar[hidden] { display: none; }
+
+    .redact-toggle {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      margin-left: auto;
+      font-weight: 500;
+      color: var(--ink-2);
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .redact-toggle input { accent-color: var(--green); cursor: pointer; }
+
+    /* ---------------- Detail sections ---------------- */
+
+    .d-chips { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.45rem; }
+
+    .d-chip {
+      display: inline-block;
+      padding: 0.1rem 0.45rem;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      border: 1px solid transparent;
+      white-space: nowrap;
+    }
+    .d-chip--ok    { background: #eef7d4; color: #46540a; border-color: #dfeeb6; }
+    .d-chip--info  { background: #dfeef1; color: #1c5b68; border-color: #cbe3e8; }
+    .d-chip--warn  { background: var(--warn-bg); color: var(--warn-fg); border-color: #f3e0bf; }
+    .d-chip--err   { background: var(--err-bg); color: var(--err-fg); border-color: #f7d5d2; }
+    .d-chip--muted { background: var(--bg); color: var(--muted); border-color: var(--border); }
+
+    .d-section { border: 1px solid var(--border); border-radius: 8px; margin-bottom: 0.85rem; overflow: hidden; }
+
+    .d-section__head {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      width: 100%;
+      padding: 0.7rem 0.9rem;
+      background: var(--surface-alt);
+      border: none;
+      border-bottom: 1px solid transparent;
+      font: inherit;
+      text-align: left;
+      cursor: pointer;
+    }
+    .d-section[open] > .d-section__head { border-bottom-color: var(--border); }
+    .d-section__head:hover { background: #f2f4f7; }
+
+    .d-section__caret { color: var(--muted); font-size: 10px; width: 12px; flex: none; }
+    .d-section__title { font-weight: 650; font-size: 13.5px; }
+    .d-section__meta { margin-left: auto; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+    .d-section__body { padding: 0.9rem; }
+    .d-section__body[hidden] { display: none; }
+
+    .d-metrics {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 0.65rem;
+    }
+    .d-metric { min-width: 0; }
+    .d-metric__label {
+      font-size: 11px;
+      font-weight: 650;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .d-metric__value {
+      font-family: var(--mono);
+      font-size: 13px;
+      color: var(--ink);
+      word-break: break-word;
+      margin-top: 0.1rem;
+    }
+    .d-metric__value.is-empty { color: var(--muted); font-family: inherit; }
+
+    /* Conversation */
+    .d-turn { border: 1px solid var(--border); border-radius: 8px; margin-bottom: 0.55rem; overflow: hidden; }
+    .d-turn__head {
+      display: flex; align-items: center; gap: 0.5rem;
+      padding: 0.35rem 0.7rem;
+      font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+    }
+    .d-turn__body { padding: 0.6rem 0.7rem; font-size: 13px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
+    .d-turn--system    .d-turn__head { background: #eceef1; color: #4d5665; }
+    .d-turn--user      .d-turn__head { background: #dfeef1; color: #1c5b68; }
+    .d-turn--assistant .d-turn__head { background: #eef7d4; color: #46540a; }
+    .d-turn--tool      .d-turn__head { background: #e5e8f0; color: #343d63; }
+    .d-turn__finish { margin-left: auto; font-weight: 600; letter-spacing: 0.02em; opacity: 0.75; }
+
+
+    /* Packed transcripts and tool results inside one message */
+    .d-turn__segments { padding: 0.6rem 0.7rem; }
+    .d-turn__segments > * + * { margin-top: 0.55rem; }
+    .d-turn__segments .d-turn__body { padding: 0; }
+
+    .d-turn__raw {
+      margin-left: auto;
+      font: inherit;
+      font-size: 10.5px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      background: transparent;
+      border: 1px solid currentColor;
+      border-radius: 999px;
+      padding: 0 0.45rem;
+      color: inherit;
+      opacity: 0.6;
+      cursor: pointer;
+    }
+    .d-turn__raw:hover { opacity: 1; }
+
+    .d-nested {
+      border-left: 2px solid var(--border-strong);
+      padding-left: 0.6rem;
+    }
+    .d-nested__label {
+      font-size: 10.5px; font-weight: 700; letter-spacing: 0.05em;
+      text-transform: uppercase; color: var(--muted); margin-bottom: 0.35rem;
+    }
+    .d-turn--nested { margin-bottom: 0.4rem; }
+    .d-turn--nested:last-child { margin-bottom: 0; }
+    .d-turn--nested .d-turn__head { padding: 0.2rem 0.55rem; font-size: 10px; }
+    .d-turn--nested .d-turn__body { padding: 0.45rem 0.55rem; font-size: 12.5px; }
+
+    .d-toolres { border: 1px solid var(--info-bg); border-radius: 6px; overflow: hidden; }
+    .d-toolres__head {
+      display: flex; align-items: center; gap: 0.45rem;
+      padding: 0.35rem 0.55rem; background: var(--info-bg);
+    }
+    .d-toolres__head code { font-family: var(--mono); font-size: 12px; color: var(--info-fg); }
+    .d-toolres__body { padding: 0.5rem 0.55rem; }
+
+    .d-seg-heading {
+      font-size: 10.5px; font-weight: 700; letter-spacing: 0.05em;
+      text-transform: uppercase; color: var(--muted);
+    }
+
+    /* Small tables */
+    .d-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+    .d-table th {
+      position: static;
+      padding: 0.4rem 0.5rem;
+      font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em;
+      color: var(--muted); background: none; border-bottom: 1px solid var(--border);
+    }
+    .d-table td { padding: 0.45rem 0.5rem; border-bottom: 1px solid var(--border); white-space: normal; vertical-align: top; }
+    .d-table tr:last-child td { border-bottom: none; }
+    .d-table code { font-family: var(--mono); font-size: 12px; }
+
+    /* Masked sensitive values */
+    .d-mask { font-family: var(--mono); letter-spacing: 0.08em; color: var(--muted); }
+    .d-note {
+      display: flex; gap: 0.5rem; align-items: flex-start;
+      background: var(--warn-bg); color: var(--warn-fg);
+      border: 1px solid #f3e0bf; border-radius: 6px;
+      padding: 0.5rem 0.65rem; font-size: 12.5px; margin-bottom: 0.7rem;
+    }
+    .d-note button {
+      font: inherit; font-size: 12px; font-weight: 650;
+      margin-left: auto; flex: none;
+      background: var(--surface); color: var(--warn-fg);
+      border: 1px solid #e5cf9f; border-radius: 999px;
+      padding: 0.15rem 0.6rem; cursor: pointer; white-space: nowrap;
+    }
+    .d-note button:hover { background: #fff8ec; }
+
+    /* Compression before/after */
+    .d-diff { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
+    .d-diff__col { border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+    .d-diff__head {
+      padding: 0.3rem 0.6rem; background: var(--surface-alt);
+      font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted);
+      display: flex; justify-content: space-between; gap: 0.5rem;
+    }
+    .d-diff__body { padding: 0.55rem 0.6rem; font-size: 12.5px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+    @media (max-width: 640px) { .d-diff { grid-template-columns: 1fr; } }
+
+    .d-score { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+    .d-subtle { color: var(--muted); font-size: 12.5px; }
+
+    /* Table cells for the new usage column */
+    .col-usage { line-height: 1.3; font-variant-numeric: tabular-nums; }
+    .usage-tokens { display: block; font-family: var(--mono); font-size: 12.5px; color: var(--ink); }
+    .usage-cost { display: block; font-size: 11.5px; color: var(--muted); }
+    .row-chips { display: flex; flex-wrap: wrap; gap: 0.2rem; margin-top: 0.3rem; }
+
+
+    .filters-row--top { margin-bottom: 0.55rem; }
+    .filters-row--bottom {
+      padding-top: 0.55rem;
+      border-top: 1px solid var(--border);
+    }
+    .filters-row--bottom[hidden], .field-group[hidden] { display: none; }
+    .filters-row--bottom .field-group label { color: var(--muted); }
+
+    /* MCP / A2A */
+    .rpc-call { border: 1px solid var(--border); border-radius: 8px; margin-bottom: 0.7rem; overflow: hidden; }
+    .rpc-call:last-child { margin-bottom: 0; }
+    .rpc-call__head {
+      display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;
+      padding: 0.5rem 0.7rem; background: var(--surface-alt); border-bottom: 1px solid var(--border);
+    }
+    .rpc-method {
+      font-family: var(--mono); font-size: 12px; font-weight: 650;
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 4px; padding: 0.1rem 0.4rem; color: var(--ink);
+    }
+    .rpc-tool { font-family: var(--mono); font-size: 12.5px; font-weight: 650; color: var(--green); }
+    .rpc-lat { margin-left: auto; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+    .rpc-call__body { padding: 0.7rem; }
+    .rpc-label {
+      font-size: 11px; font-weight: 650; letter-spacing: 0.04em;
+      text-transform: uppercase; color: var(--muted); margin: 0.6rem 0 0.25rem;
+    }
+    .rpc-label:first-child { margin-top: 0; }
+    .rpc-text {
+      font-family: var(--mono); font-size: 12.5px; line-height: 1.55;
+      white-space: pre-wrap; word-break: break-word;
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 6px; padding: 0.5rem 0.6rem;
+    }
+    .rpc-error {
+      background: var(--err-bg); color: var(--err-fg);
+      border: 1px solid #f7d5d2; border-radius: 6px;
+      padding: 0.45rem 0.6rem; font-size: 12.5px; font-weight: 600;
+    }
+    .session-id { font-family: var(--mono); font-size: 12px; word-break: break-all; }
+
+    /* ---------------- Responsive ---------------- */
+
+    @media (max-width: 900px) {
+      .sidebar {
+        position: static;
+        width: auto;
+        flex-direction: row;
+        align-items: center;
+        justify-content: space-between;
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+      }
+      .brand { border-bottom: none; }
+      .nav { display: flex; align-items: center; padding: 0 0.75rem; }
+      .nav-label, .sidebar-foot { display: none; }
+      .main { margin-left: 0; }
+      .topbar, .content { padding-left: 1rem; padding-right: 1rem; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      * { transition: none !important; }
+    }
+  </style>
+</head>
+<body>
+
+{% set base = {'range': state.range, 'type': state.type, 'status': state.status, 'provider': state.provider, 'model': state.model, 'feature': state.feature, 'method': state.method, 'tool': state.tool, 'q': state.q, 'per_page': per_page} %}
+
+<aside class="sidebar">
+  <div class="brand">
+    <div class="brand-tile" aria-hidden="true">
+      <svg width="20" height="20" viewBox="0 0 24 24" focusable="false">
+        <path fill="currentColor" d="M7.59 18.9L8.82 20.74L8.72 20.95L8.74 21.62L13.59 21.62L14.03 20.77L12.05 18.26L8.03 18.26ZM8.56 10.77L5.49 13.33L4.23 13.33L1.23 17.15L1.15 21.62L4.46 21.62L7.62 17.41L11.56 17.28L12.59 15.51ZM10.9 6.87L9.13 9.87L9.33 10.41L17.95 20.54L17.77 21.62L21.69 21.62L22.54 18.18L13.08 6.87ZM14.49 2.36L12.1 4.33L11.28 5.9L13.49 6.03L16.1 9.28L17.18 10.33L19.26 8.56L19.26 7.41L18.54 6.51L18.54 6.28L19.05 5.77L14.82 2.36Z"/>
+      </svg>
+    </div>
+    <div>
+      <div class="brand-name">Kong HTTP Log</div>
+      <div class="brand-sub">{{ "{:,}".format(grand_total) }} entries</div>
+    </div>
+  </div>
+  <nav class="nav">
+    <div class="nav-label">HTTP logs</div>
+    <a class="nav-item is-active" href="{{ url_for('index') }}" aria-current="page">Requests</a>
+  </nav>
+  <div class="summary" id="summaryPanel" aria-live="polite"></div>
+
+  <div class="sidebar-foot">
+    Send logs to
+    <code>POST /logs</code>
+  </div>
+</aside>
+
+<div class="main">
+  <header class="topbar">
+    <div>
+      <div class="crumb">HTTP logs /</div>
+      <h1 class="page-title">Requests</h1>
+    </div>
+    <div class="topbar-actions">
+      <form method="get" id="rangeForm">
+        {% for k, v in base.items() %}{% if k != 'range' and v and v != 'all' %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endif %}{% endfor %}
+        <select class="control" name="range" onchange="this.form.submit()" aria-label="Time range">
+          {% for key, label in time_ranges %}
+          <option value="{{ key }}" {% if state.range == key %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </form>
+      <a class="control icon-btn" href="{{ url_for('index', **dict(base, page=page)) }}" title="Refresh" aria-label="Refresh">⟳</a>
+    </div>
+  </header>
+
+  <div class="content">
+
+    <form class="filters" method="get">
+      <input type="hidden" name="range" value="{{ state.range }}">
+      <input type="hidden" name="per_page" value="{{ per_page }}">
+      <div class="filters-row filters-row--top">
+        <span class="filters-label">Filters</span>
+
+        <div class="search-field">
+          <span class="glyph" aria-hidden="true">🔍</span>
+          <input type="search" name="q" value="{{ state.q }}" placeholder="Search payload contents" aria-label="Search payload contents" autocomplete="off">
+        </div>
+
+        <div class="field-group">
+          <label for="typeFilter">Type</label>
+          <select class="control" id="typeFilter" name="type">
+            <option value="all" {% if state.type == 'all' %}selected{% endif %}>All</option>
+            <option value="llm" {% if state.type == 'llm' %}selected{% endif %}>LLM</option>
+            <option value="mcp" {% if state.type == 'mcp' %}selected{% endif %}>MCP</option>
+            <option value="a2a" {% if state.type == 'a2a' %}selected{% endif %}>A2A</option>
+            <option value="api" {% if state.type == 'api' %}selected{% endif %}>API</option>
+          </select>
+        </div>
+
+        <div class="field-group">
+          <label for="statusFilter">Status</label>
+          <select class="control" id="statusFilter" name="status">
+            <option value="all" {% if state.status == 'all' %}selected{% endif %}>All</option>
+            <option value="2xx" {% if state.status == '2xx' %}selected{% endif %}>2xx</option>
+            <option value="4xx" {% if state.status == '4xx' %}selected{% endif %}>4xx</option>
+            <option value="5xx" {% if state.status == '5xx' %}selected{% endif %}>5xx</option>
+            <option value="error" {% if state.status == 'error' %}selected{% endif %}>Errors (4xx + 5xx)</option>
+          </select>
+        </div>
+
+        <div class="filter-actions">
+        <button type="submit" class="control btn-primary">Apply</button>
+        <a class="control btn-secondary" href="{{ url_for('index', range=state.range, per_page=per_page) }}">Clear</a>
+        </div>
+      </div>
+
+      <div class="filters-row filters-row--bottom" id="filtersScoped">
+        {% if providers %}
+        <div class="field-group" data-types="{{ filter_scope['provider'] | join(' ') }}">
+          <label for="providerFilter">Provider</label>
+          <select class="control" id="providerFilter" name="provider">
+            <option value="all" {% if state.provider == 'all' %}selected{% endif %}>All</option>
+            {% for p in providers %}
+            <option value="{{ p }}" {% if state.provider == p %}selected{% endif %}>{{ p }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        {% endif %}
+
+        {% if models %}
+        <div class="field-group" data-types="{{ filter_scope['model'] | join(' ') }}">
+          <label for="modelFilter">Model</label>
+          <select class="control" id="modelFilter" name="model">
+            <option value="all" {% if state.model == 'all' %}selected{% endif %}>All</option>
+            {% for m in models %}
+            <option value="{{ m }}" {% if state.model == m %}selected{% endif %}>{{ m }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        {% endif %}
+
+        {% if methods %}
+        <div class="field-group" data-types="{{ filter_scope['method'] | join(' ') }}">
+          <label for="methodFilter">Method</label>
+          <select class="control" id="methodFilter" name="method">
+            <option value="all" {% if state.method == 'all' %}selected{% endif %}>All</option>
+            {% for m in methods %}
+            <option value="{{ m }}" {% if state.method == m %}selected{% endif %}>{{ m }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        {% endif %}
+
+        {% if tools %}
+        <div class="field-group" data-types="{{ filter_scope['tool'] | join(' ') }}">
+          <label for="toolFilter">Tool</label>
+          <select class="control" id="toolFilter" name="tool">
+            <option value="all" {% if state.tool == 'all' %}selected{% endif %}>All</option>
+            {% for t in tools %}
+            <option value="{{ t }}" {% if state.tool == t %}selected{% endif %}>{{ t }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        {% endif %}
+
+        <div class="field-group" id="featureGroup">
+          <label for="featureFilter">Feature</label>
+          <select class="control" id="featureFilter" name="feature">
+            <option value="all" {% if state.feature == 'all' %}selected{% endif %}>All</option>
+            <option value="sanitizer" data-types="{{ feature_scope['sanitizer'] | join(' ') }}" {% if state.feature == 'sanitizer' %}selected{% endif %}>PII sanitizer</option>
+            <option value="compressor" data-types="{{ feature_scope['compressor'] | join(' ') }}" {% if state.feature == 'compressor' %}selected{% endif %}>Compression</option>
+            <option value="judge" data-types="{{ feature_scope['judge'] | join(' ') }}" {% if state.feature == 'judge' %}selected{% endif %}>LLM judge</option>
+            <option value="cache_hit" data-types="{{ feature_scope['cache_hit'] | join(' ') }}" {% if state.feature == 'cache_hit' %}selected{% endif %}>Cache hit</option>
+            <option value="cache_miss" data-types="{{ feature_scope['cache_miss'] | join(' ') }}" {% if state.feature == 'cache_miss' %}selected{% endif %}>Cache miss</option>
+            <option value="tool_call" data-types="{{ feature_scope['tool_call'] | join(' ') }}" {% if state.feature == 'tool_call' %}selected{% endif %}>MCP tool calls</option>
+            <option value="rpc_error" data-types="{{ feature_scope['rpc_error'] | join(' ') }}" {% if state.feature == 'rpc_error' %}selected{% endif %}>RPC errors</option>
+          </select>
+        </div>
+      </div>
+    </form>
+
+    <div class="card">
+      <div class="selectbar" id="selectBar" hidden>
+        <span id="selectCount">0 selected</span>
+        <button type="button" class="control" id="btnExportSelected">Export selected</button>
+        <button type="button" class="control" id="btnClearSelect">Clear</button>
+        <label class="redact-toggle">
+          <input type="checkbox" id="redactToggle" checked>
+          Redact credentials &amp; captured PII
+        </label>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col" class="col-pick">
+                <input type="checkbox" id="pickAll" aria-label="Select all rows on this page">
+              </th>
+              <th scope="col">Timestamp</th>
+              <th scope="col">Status code</th>
+              <th scope="col">Request URI</th>
+              <th scope="col">Response latency</th>
+              <th scope="col">Type</th>
+              <th scope="col">Model / method</th>
+              <th scope="col">Usage</th>
+              <th scope="col">Consumer</th>
+              <th scope="col">Client IP</th>
+            </tr>
+          </thead>
+          <tbody id="logRows">
+            {% if entries %}
+              {% for e in entries %}
+              <tr tabindex="0" role="button" data-id="{{ e.id }}" aria-label="Open request {{ e.id }}">
+                <td class="col-pick"><input type="checkbox" class="row-pick" value="{{ e.id }}" aria-label="Select request {{ e.id }}"></td>
+                <td class="col-ts" data-ts="{{ e.timestamp }}">{{ e.timestamp | fmtts }}</td>
+                <td>
+                  {% if e.status is none %}
+                    <span class="pill pill-none">–</span>
+                  {% elif e.status < 300 %}
+                    <span class="pill pill-ok">{{ e.status }}</span>
+                  {% elif e.status < 400 %}
+                    <span class="pill pill-info">{{ e.status }}</span>
+                  {% elif e.status < 500 %}
+                    <span class="pill pill-err">{{ e.status }}</span>
+                  {% else %}
+                    <span class="pill pill-err">{{ e.status }}</span>
+                  {% endif %}
+                </td>
+                <td class="col-uri" title="{{ e.uri or '' }}">{% if e.uri %}{{ e.uri }}{% else %}<span class="dash">–</span>{% endif %}</td>
+                <td class="col-num">{% if e.latency is not none %}{{ "{:,}".format(e.latency) }} ms{% else %}<span class="dash">–</span>{% endif %}</td>
+                <td>
+                  <span class="tag tag-{{ e.log_type }}">{{ e.log_type | upper }}</span>
+                  {% if e.sanitized_count or e.tokens_saved or e.cache_status or e.judge_score is not none or e.rpc_error %}
+                  <span class="row-chips">
+                    {% if e.sanitized_count %}<span class="d-chip d-chip--info">PII {{ e.sanitized_count }}</span>{% endif %}
+                    {% if e.tokens_saved %}<span class="d-chip d-chip--ok">&minus;{{ e.tokens_saved }} tok</span>{% endif %}
+                    {% if e.cache_status %}<span class="d-chip d-chip--{% if e.cache_status == 'hit' %}ok{% else %}muted{% endif %}">CACHE {{ e.cache_status | upper }}</span>{% endif %}
+                    {% if e.judge_score is not none %}<span class="d-chip d-chip--{% if e.judge_score < 50 %}err{% else %}ok{% endif %}">JUDGE {{ e.judge_score | round(0) | int }}</span>{% endif %}
+                    {% if e.rpc_error %}<span class="d-chip d-chip--err" title="{{ e.rpc_error }}">RPC ERROR</span>{% endif %}
+                  </span>
+                  {% endif %}
+                </td>
+                <td class="col-model">
+                  {% if e.rpc_method or e.tool_name %}
+                    {% if e.rpc_method %}<span class="model-provider">{{ e.rpc_method }}</span>{% endif %}
+                    {% if e.tool_name %}<span class="model-name">{{ e.tool_name }}</span>
+                    {% elif e.task_state %}<span class="model-name">{{ e.task_state }}</span>{% endif %}
+                  {% elif e.model or e.provider %}
+                    {% if e.provider %}<span class="model-provider">{{ e.provider }}</span>{% endif %}
+                    {% if e.model %}<span class="model-name">{{ e.model }}</span>{% endif %}
+                  {% else %}<span class="dash">–</span>{% endif %}
+                </td>
+                <td class="col-usage">
+                  {% if e.total_tokens is not none %}
+                    <span class="usage-tokens">{{ "{:,}".format(e.total_tokens) }} tok</span>
+                    {% if e.cost is not none %}<span class="usage-cost">${{ "%.5f"|format(e.cost) }}</span>{% endif %}
+                  {% else %}<span class="dash">–</span>{% endif %}
+                </td>
+                <td class="col-consumer">
+                  {% if e.consumer %}<span class="consumer-name">{{ e.consumer }}</span>{% else %}<span class="dash">–</span>{% endif %}
+                  {% if e.client %}<span class="client-name" title="{{ e.user_agent or '' }}">{{ e.client }}{% if e.client_version %} {{ e.client_version }}{% endif %}</span>{% endif %}
+                </td>
+                <td class="col-ip">{% if e.client_ip %}{{ e.client_ip }}{% else %}<span class="dash">–</span>{% endif %}</td>
+              </tr>
+              {% endfor %}
+            {% else %}
+              <tr>
+                <td colspan="10" class="empty">
+                  <strong>No requests in this window</strong>
+                  Widen the time range or clear the filters to see more.
+                </td>
+              </tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="pager">
+        <div>
+          {% if entries %}
+            Showing {{ "{:,}".format(range_start) }}–{{ "{:,}".format(range_end) }}
+            {% if total is not none %}of {{ "{:,}".format(total) }}{% endif %}
+          {% else %}
+            No results
+          {% endif %}
+        </div>
+
+        <div class="pager-nav">
+          <a class="control" id="btnExportAll" href="#" title="Download every log matching the current filters">Export filtered</a>
+          <form method="get" style="display:flex;align-items:center;gap:0.4rem;">
+            {% for k, v in base.items() %}{% if k != 'per_page' and v and v != 'all' %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endif %}{% endfor %}
+            <label for="perPage">Rows</label>
+            <select class="control" id="perPage" name="per_page" onchange="this.form.submit()">
+              {% for size in page_sizes %}
+              <option value="{{ size }}" {% if size == per_page %}selected{% endif %}>{{ size }}</option>
+              {% endfor %}
+            </select>
+          </form>
+
+          {% if page > 1 %}
+            <a href="{{ url_for('index', **dict(base, page=1)) }}">First</a>
+            <a href="{{ url_for('index', **dict(base, page=page-1)) }}">Previous</a>
+          {% else %}
+            <span class="pager-btn">First</span>
+            <span class="pager-btn">Previous</span>
+          {% endif %}
+
+          <span>Page {{ "{:,}".format(page) }}{% if total_pages %} of {{ "{:,}".format(total_pages) }}{% endif %}</span>
+
+          {% if has_next %}
+            <a href="{{ url_for('index', **dict(base, page=page+1)) }}">Next</a>
+            {% if total_pages %}<a href="{{ url_for('index', **dict(base, page=total_pages)) }}">Last</a>{% endif %}
+          {% else %}
+            <span class="pager-btn">Next</span>
+            {% if total_pages %}<span class="pager-btn">Last</span>{% endif %}
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="scrim" id="scrim"></div>
+
+<aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-labelledby="drawerTitle" aria-hidden="true">
+  <div class="drawer-head">
+    <div>
+      <div class="drawer-title" id="drawerTitle">Request</div>
+      <div class="drawer-meta" id="drawerMeta"></div>
+      <div class="d-chips" id="drawerChips"></div>
+    </div>
+    <button class="control icon-btn" id="drawerClose" aria-label="Close details">✕</button>
+  </div>
+  <div class="drawer-tools">
+    <button class="control" id="btnExpand">Expand all</button>
+    <button class="control" id="btnCollapse">Collapse all</button>
+    <button class="control" id="btnCopy">Copy JSON</button>
+    <a class="control" id="btnExportOne" href="#">Export</a>
+  </div>
+  <div class="drawer-body" id="drawerBody"></div>
+</aside>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---- Timestamps -------------------------------------------------------
+  // Only the rows on this page are formatted, so this stays cheap no matter
+  // how many entries are in the database.
+  var TS_FMT = new Intl.DateTimeFormat(undefined, {
+    year: "numeric", month: "short", day: "numeric",
+    hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true
+  });
+
+  function formatTs(iso) {
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return iso;
+    var ms = String(d.getMilliseconds()).padStart(3, "0");
+    return TS_FMT.format(d)
+      .replace(/,(\s\d{1,2}:)/, "$1")
+      .replace(/(\d{1,2}:\d{2}:\d{2})/, "$1." + ms);
+  }
+
+  document.querySelectorAll("[data-ts]").forEach(function (cell) {
+    cell.textContent = formatTs(cell.getAttribute("data-ts"));
+  });
+
+  // ---- JSON tree --------------------------------------------------------
+  // Built with createElement/textContent rather than regex over an HTML
+  // string: no escaping bugs, no backtracking, and nodes are only created for
+  // the one payload that is open.
+
+  function isExpandable(value) {
+    return value !== null && typeof value === "object";
+  }
+
+  function tryParse(text) {
+    if (typeof text !== "string") return null;
+    var t = text.trim();
+    if (!(t.startsWith("{") && t.endsWith("}")) && !(t.startsWith("[") && t.endsWith("]"))) return null;
+    try { return JSON.parse(t); } catch (e) { return null; }
+  }
+
+  var STR_LIMIT = 280;
+
+  function leaf(value, host) {
+    var span = document.createElement("span");
+    if (value === null) { span.className = "jt-null"; span.textContent = "null"; return span; }
+    if (typeof value === "number") { span.className = "jt-num"; span.textContent = String(value); return span; }
+    if (typeof value === "boolean") { span.className = "jt-bool"; span.textContent = String(value); return span; }
+    if (typeof value !== "string") { span.className = "jt-punct"; span.textContent = String(value); return span; }
+
+    span.className = "jt-str";
+    var full = JSON.stringify(value);
+    if (full.length <= STR_LIMIT || !host) {
+      span.textContent = full;
+      return span;
+    }
+
+    // Long bodies are shown clipped so a 20 KB payload does not swamp the row.
+    var short = full.slice(0, STR_LIMIT) + "\u2026";
+    var expanded = false;
+    span.textContent = short;
+
+    var more = document.createElement("button");
+    more.className = "jt-embed";
+    more.type = "button";
+    more.textContent = "Show all " + full.length.toLocaleString() + " chars";
+    more.addEventListener("click", function () {
+      expanded = !expanded;
+      span.textContent = expanded ? full : short;
+      more.textContent = expanded ? "Show less" : "Show all " + full.length.toLocaleString() + " chars";
+    });
+    host.appendChild(span);
+    host.appendChild(more);
+    return null;
+  }
+
+  function keyLabel(key) {
+    var span = document.createElement("span");
+    span.className = "jt-key";
+    span.textContent = JSON.stringify(String(key)) + ": ";
+    return span;
+  }
+
+  // depth: nodes below `openTo` start collapsed, so opening a huge payload
+  // never builds more than a couple of levels up front.
+  function buildNode(key, value, depth, openTo) {
+    var wrap = document.createElement("div");
+    var row = document.createElement("div");
+    row.className = "jt-row";
+    wrap.appendChild(row);
+
+    var content = document.createElement("span");
+    content.className = "jt-content";
+
+    if (!isExpandable(value)) {
+      var spacer = document.createElement("span");
+      spacer.className = "jt-spacer";
+      row.appendChild(spacer);
+      if (key !== null) content.appendChild(keyLabel(key));
+      var rendered = leaf(value, content);
+      if (rendered) content.appendChild(rendered);
+      row.appendChild(content);
+
+      // Kong embeds request/response bodies as escaped JSON strings; offer to
+      // open them as a tree instead of a wall of \" escapes.
+      var embedded = tryParse(value);
+      if (embedded !== null) {
+        var btn = document.createElement("button");
+        btn.className = "jt-embed";
+        btn.type = "button";
+        btn.textContent = "Parse JSON";
+        var holder = null;
+        btn.addEventListener("click", function () {
+          if (holder) {
+            holder.hidden = !holder.hidden;
+            btn.textContent = holder.hidden ? "Parse JSON" : "Hide parsed";
+            return;
+          }
+          holder = document.createElement("div");
+          holder.className = "jt-children";
+          holder.appendChild(buildNode(null, embedded, 0, 1));
+          wrap.appendChild(holder);
+          btn.textContent = "Hide parsed";
+        });
+        content.appendChild(btn);
+      }
+      return wrap;
+    }
+
+    var isArray = Array.isArray(value);
+    var keys = isArray ? value.map(function (_, i) { return i; }) : Object.keys(value);
+    var open = depth < openTo;
+    var openBrace = isArray ? "[" : "{";
+    var closeBrace = isArray ? "]" : "}";
+
+    var toggle = document.createElement("button");
+    toggle.className = "jt-toggle";
+    toggle.type = "button";
+    toggle.setAttribute("aria-expanded", String(open));
+    row.appendChild(toggle);
+
+    if (key !== null) content.appendChild(keyLabel(key));
+
+    var brace = document.createElement("span");
+    brace.className = "jt-punct";
+    content.appendChild(brace);
+
+    var summary = document.createElement("span");
+    summary.className = "jt-count";
+    content.appendChild(summary);
+    row.appendChild(content);
+
+    var children = document.createElement("div");
+    children.className = "jt-children";
+    wrap.appendChild(children);
+
+    // Closing brace on its own line, shown only while expanded.
+    var closer = document.createElement("div");
+    closer.className = "jt-row";
+    var closeSpacer = document.createElement("span");
+    closeSpacer.className = "jt-spacer";
+    closer.appendChild(closeSpacer);
+    var closeText = document.createElement("span");
+    closeText.className = "jt-punct";
+    closeText.textContent = closeBrace;
+    closer.appendChild(closeText);
+    wrap.appendChild(closer);
+
+    var built = false;
+    function build() {
+      if (built) return;
+      built = true;
+      var frag = document.createDocumentFragment();
+      keys.forEach(function (k) {
+        frag.appendChild(buildNode(k, value[k], depth + 1, openTo));
+      });
+      children.appendChild(frag);
+    }
+
+    function render(isOpen) {
+      toggle.textContent = isOpen ? "\u25be" : "\u25b8";
+      toggle.setAttribute("aria-expanded", String(isOpen));
+      children.hidden = !isOpen;
+      closer.hidden = !isOpen;
+      if (isOpen) {
+        brace.textContent = openBrace;
+        summary.textContent = "";
+      } else {
+        brace.textContent = openBrace + " \u2026 " + closeBrace;
+        summary.textContent = "  " + keys.length + (keys.length === 1 ? " item" : " items");
+      }
+    }
+
+    if (open) build();
+    render(open);
+
+    toggle.addEventListener("click", function () {
+      var willOpen = children.hidden;
+      if (willOpen) build();
+      render(willOpen);
+    });
+
+    return wrap;
+  }
+
+  // ---- Detail sections --------------------------------------------------
+
+  function el(tag, cls, text) {
+    var node = document.createElement(tag);
+    if (cls) node.className = cls;
+    if (text !== undefined && text !== null) node.textContent = text;
+    return node;
+  }
+
+  function fmtInt(n) {
+    return (typeof n === "number") ? n.toLocaleString() : null;
+  }
+
+  function fmtMs(n) {
+    if (typeof n !== "number") return null;
+    if (n >= 1000) return (n / 1000).toFixed(2).replace(/\.?0+$/, "") + " s";
+    return (Math.round(n * 100) / 100).toLocaleString() + " ms";
+  }
+
+  function fmtCost(n) {
+    if (typeof n !== "number") return null;
+    if (n === 0) return "$0.00";
+    if (n < 0.01) return "$" + n.toFixed(6).replace(/0+$/, "").replace(/\.$/, ".0");
+    return "$" + n.toFixed(4);
+  }
+
+  // Collapsible section shell. Returns the body element to fill.
+  function makeSection(title, meta, open) {
+    var wrap = el("div", "d-section");
+    if (open) wrap.setAttribute("open", "");
+
+    var head = el("button", "d-section__head");
+    head.type = "button";
+    head.setAttribute("aria-expanded", String(!!open));
+    var caret = el("span", "d-section__caret", open ? "\u25be" : "\u25b8");
+    head.appendChild(caret);
+    head.appendChild(el("span", "d-section__title", title));
+    if (meta) head.appendChild(el("span", "d-section__meta", meta));
+
+    var body = el("div", "d-section__body");
+    body.hidden = !open;
+
+    head.addEventListener("click", function () {
+      body.hidden = !body.hidden;
+      caret.textContent = body.hidden ? "\u25b8" : "\u25be";
+      head.setAttribute("aria-expanded", String(!body.hidden));
+      if (body.hidden) wrap.removeAttribute("open"); else wrap.setAttribute("open", "");
+    });
+
+    wrap.appendChild(head);
+    wrap.appendChild(body);
+    wrap._body = body;
+    return wrap;
+  }
+
+  // pairs: [label, value] — null/undefined values render as an em dash.
+  function metrics(pairs) {
+    var grid = el("div", "d-metrics");
+    pairs.forEach(function (pair) {
+      if (!pair) return;
+      var cell = el("div", "d-metric");
+      cell.appendChild(el("div", "d-metric__label", pair[0]));
+      var empty = pair[1] === null || pair[1] === undefined || pair[1] === "";
+      cell.appendChild(el("div", "d-metric__value" + (empty ? " is-empty" : ""),
+                          empty ? "\u2014" : String(pair[1])));
+      grid.appendChild(cell);
+    });
+    return grid;
+  }
+
+  function table(headers, rows) {
+    var t = el("table", "d-table");
+    var thead = el("thead"), tr = el("tr");
+    headers.forEach(function (h) { tr.appendChild(el("th", null, h)); });
+    thead.appendChild(tr); t.appendChild(thead);
+    var tbody = el("tbody");
+    rows.forEach(function (cells) {
+      var row = el("tr");
+      cells.forEach(function (c) {
+        var td = el("td");
+        if (c instanceof Node) td.appendChild(c);
+        else td.textContent = (c === null || c === undefined || c === "") ? "\u2014" : String(c);
+        row.appendChild(td);
+      });
+      tbody.appendChild(row);
+    });
+    t.appendChild(tbody);
+    return t;
+  }
+
+  // ---- Individual sections ----------------------------------------------
+
+  function sectionOverview(ov) {
+    var section = makeSection("Overview", fmtMs(ov.latency_total), true);
+    section._body.appendChild(metrics([
+      ["Route", ov.route], ["Service", ov.service], ["Consumer", ov.consumer],
+      ["Client IP", ov.client_ip], ["Method", ov.method], ["Status", ov.status],
+      ["Provider", ov.provider],
+      ["Model requested", ov.request_model], ["Model responded", ov.response_model],
+      ["Total latency", fmtMs(ov.latency_total)],
+      ["Kong latency", fmtMs(ov.latency_kong)],
+      ["Upstream latency", ov.latency_proxy === null ? null : fmtMs(ov.latency_proxy)],
+      ["Request size", ov.request_size ? fmtInt(ov.request_size) + " B" : null],
+      ["Response size", ov.response_size ? fmtInt(ov.response_size) + " B" : null],
+      ["Request ID", ov.request_id], ["Workspace", ov.workspace],
+      ["User agent", ov.user_agent]
+    ]));
+    return section;
+  }
+
+  // Agent frameworks pack transcripts and tool results into a single content
+  // string. The server splits those into segments; render each in its own form
+  // rather than dumping the raw string.
+  function segmentNodes(segments, target) {
+    segments.forEach(function (seg) {
+      if (seg.kind === "messages") {
+        var nest = el("div", "d-nested");
+        nest.appendChild(el("div", "d-nested__label",
+          seg.turns.length + (seg.turns.length === 1 ? " prior message" : " prior messages")));
+        seg.turns.forEach(function (t) { nest.appendChild(turnNode(t, true)); });
+        target.appendChild(nest);
+      } else if (seg.kind === "tool_result") {
+        var box = el("div", "d-toolres");
+        var head = el("div", "d-toolres__head");
+        head.appendChild(el("span", "d-chip d-chip--info", "TOOL"));
+        head.appendChild(el("code", null, seg.name));
+        box.appendChild(head);
+        var body = el("div", "d-toolres__body");
+        if (seg.value !== null && typeof seg.value === "object") {
+          body.appendChild(jsonBlock(seg.value, 2));
+        } else {
+          body.appendChild(el("div", "d-turn__body", String(seg.value)));
+        }
+        box.appendChild(body);
+        target.appendChild(box);
+      } else if (seg.kind === "json") {
+        target.appendChild(jsonBlock(seg.value, 2));
+      } else if (seg.kind === "heading") {
+        target.appendChild(el("div", "d-seg-heading", seg.text));
+      } else if (seg.text) {
+        target.appendChild(el("div", "d-turn__body", seg.text));
+      }
+    });
+  }
+
+  function turnNode(turn, nested) {
+    var role = (turn.role || "user").toLowerCase();
+    var known = ["system", "user", "assistant", "tool"].indexOf(role) >= 0 ? role : "tool";
+    var wrap = el("div", "d-turn d-turn--" + known + (nested ? " d-turn--nested" : ""));
+    var head = el("div", "d-turn__head");
+    head.appendChild(el("span", null, role));
+    if (turn.finish_reason) head.appendChild(el("span", "d-turn__finish", turn.finish_reason));
+
+    if (turn.segments && turn.segments.length) {
+      var raw = el("button", "d-turn__raw", "raw");
+      raw.type = "button";
+      head.appendChild(raw);
+      wrap.appendChild(head);
+
+      var structured = el("div", "d-turn__segments");
+      segmentNodes(turn.segments, structured);
+      wrap.appendChild(structured);
+
+      var plain = el("div", "d-turn__body", turn.content || "\u2014");
+      plain.hidden = true;
+      wrap.appendChild(plain);
+
+      raw.addEventListener("click", function () {
+        var showRaw = structured.hidden === false;
+        structured.hidden = showRaw;
+        plain.hidden = !showRaw;
+        raw.textContent = showRaw ? "structured" : "raw";
+      });
+    } else {
+      wrap.appendChild(head);
+      wrap.appendChild(el("div", "d-turn__body", turn.content || "\u2014"));
+    }
+
+    if (turn.tool_calls) {
+      var pre = el("div", "d-turn__body");
+      pre.appendChild(el("span", "d-subtle", "tool_calls: " + JSON.stringify(turn.tool_calls)));
+      wrap.appendChild(pre);
+    }
+    return wrap;
+  }
+
+  function conversationNodes(conv, target) {
+    // The model in the client's body is usually a Kong route alias, so it is
+    // worth showing next to the model that actually served the request.
+    if (conv.requested_model) {
+      target.appendChild(el("div", "d-subtle",
+        "Requested as \u201c" + conv.requested_model + "\u201d" + (conv.streamed ? " \u00b7 streamed" : "")));
+      target.appendChild(el("div", null, " "));
+    }
+    conv.turns.forEach(function (t) { target.appendChild(turnNode(t)); });
+    Object.keys(conv.unparsed || {}).forEach(function (key) {
+      var wrap = el("div", "d-turn d-turn--tool");
+      wrap.appendChild(el("div", "d-turn__head", key + " (not JSON)"));
+      wrap.appendChild(el("div", "d-turn__body", String(conv.unparsed[key])));
+      target.appendChild(wrap);
+    });
+  }
+
+  function sectionConversation(conv) {
+    var n = conv.turns.length;
+    var section = makeSection("Conversation", n + (n === 1 ? " message" : " messages"), true);
+    conversationNodes(conv, section._body);
+    return section;
+  }
+
+  function sectionUsage(u) {
+    var headline = u.served_from_cache
+      ? "served from cache"
+      : (fmtInt(u.total_tokens) ? fmtInt(u.total_tokens) + " tok" : null);
+    var section = makeSection("Usage & cost", headline, true);
+
+    if (u.served_from_cache) {
+      section._body.appendChild(el("div", "d-subtle",
+        "Cache hit \u2014 no tokens were billed. The provider call was skipped, so usage reads zero."));
+    }
+    section._body.appendChild(metrics([
+      ["Prompt tokens", fmtInt(u.prompt_tokens)],
+      ["Completion tokens", fmtInt(u.completion_tokens)],
+      ["Total tokens", fmtInt(u.total_tokens)],
+      ["Cached tokens", fmtInt(u.cached_tokens)],
+      ["Cache write tokens", fmtInt(u.cache_write_tokens)],
+      u.served_from_cache
+        ? ["Cost saved", fmtCost(u.cost_savings)]
+        : ["Cost", fmtCost(u.cost)],
+      ["Time to first token", fmtMs(u.time_to_first_token)],
+      ["Time per token", fmtMs(u.time_per_token)],
+      ["LLM latency", fmtMs(u.llm_latency)],
+      ["Mode", u.request_mode]
+    ]));
+    return section;
+  }
+
+  function sectionSanitizer(s) {
+    var n = s.sanitized || s.identified;
+    var section = makeSection("PII sanitizer",
+      (n ? n + (n === 1 ? " entity" : " entities") : null), true);
+
+    if (s.blocked) {
+      var warn = el("div", "d-note");
+      warn.appendChild(el("span", null, "Request blocked: " + (s.block_reason || "policy")));
+      section._body.appendChild(warn);
+    }
+
+    section._body.appendChild(metrics([
+      ["Mode", s.mode], ["Identified", fmtInt(s.identified)], ["Sanitized", fmtInt(s.sanitized)],
+      ["Input masked", s.input_masked ? "yes" : "no"],
+      ["Output masked", s.output_masked ? "yes" : "no"],
+      ["Duration", fmtMs(s.duration)],
+      ["Input latency", fmtMs(s.input_latency)],
+      ["Output latency", fmtMs(s.output_latency)]
+    ]));
+
+    if (!s.items.length) return section;
+
+    var revealed = false;
+    var cells = [];
+
+    if (s.contains_sensitive) {
+      var note = el("div", "d-note");
+      note.appendChild(el("span", null,
+        "Original values are the real data the sanitizer replaced, stored in this log."));
+      var btn = el("button", null, "Reveal");
+      btn.type = "button";
+      note.appendChild(btn);
+      btn.addEventListener("click", function () {
+        revealed = !revealed;
+        btn.textContent = revealed ? "Hide" : "Reveal";
+        cells.forEach(function (c) {
+          c.node.textContent = revealed ? c.value : "\u2022".repeat(Math.min(12, String(c.value).length));
+          c.node.className = revealed ? "" : "d-mask";
+        });
+      });
+      section._body.appendChild(note);
+      section._body.style.paddingTop = "0.9rem";
+      // note is inserted after the metrics grid; move it above for prominence
+      section._body.insertBefore(note, section._body.firstChild);
+    }
+
+    var rows = s.items.map(function (item) {
+      var original = el("span", "d-mask",
+        item.original_text ? "\u2022".repeat(Math.min(12, String(item.original_text).length)) : "\u2014");
+      if (item.original_text) cells.push({ node: original, value: item.original_text });
+      return [
+        el("code", null, item.entity_type),
+        fmtInt(item.count),
+        original,
+        el("code", null, item.redact_text || "\u2014")
+      ];
+    });
+    section._body.appendChild(table(["Entity", "Count", "Original", "Replaced with"], rows));
+    return section;
+  }
+
+  function sectionCompressor(c) {
+    var section = makeSection("Prompt compression",
+      c.tokens_saved ? "\u2212" + c.tokens_saved + " tok" : null, true);
+
+    section._body.appendChild(metrics([
+      ["Tokens before", fmtInt(c.tokens_before)],
+      ["Tokens after", fmtInt(c.tokens_after)],
+      ["Tokens saved", fmtInt(c.tokens_saved)],
+      ["Reduction", c.pct_saved !== null ? c.pct_saved + "%" : null],
+      ["Strategy", c.compress_type], ["Target rate", c.compress_value],
+      ["Duration", fmtMs(c.duration)], ["Compressor", c.model]
+    ]));
+
+    c.items.forEach(function (item) {
+      var diff = el("div", "d-diff");
+      [["Original", item.original_text, item.original_token_count],
+       ["Compressed", item.compress_text, item.compress_token_count]].forEach(function (col) {
+        var box = el("div", "d-diff__col");
+        var head = el("div", "d-diff__head");
+        head.appendChild(el("span", null, col[0]));
+        head.appendChild(el("span", null, (col[2] || 0) + " tok"));
+        box.appendChild(head);
+        box.appendChild(el("div", "d-diff__body", col[1] || "\u2014"));
+        diff.appendChild(box);
+      });
+      section._body.appendChild(el("div", null, " "));
+      section._body.appendChild(diff);
+    });
+    return section;
+  }
+
+  function sectionCache(c) {
+    var section = makeSection("Semantic cache",
+      c.status ? c.status.toUpperCase() : null, true);
+    section._body.appendChild(metrics([
+      ["Status", c.status ? c.status.toUpperCase() : null],
+      ["Cost saved", fmtCost(c.cost_savings)],
+      ["Embeddings provider", c.embeddings_provider],
+      ["Embeddings model", c.embeddings_model],
+      ["Embeddings tokens", fmtInt(c.embeddings_tokens)],
+      ["Embeddings latency", fmtMs(c.embeddings_latency)],
+      ["Fetch latency", fmtMs(c.fetch_latency)],
+      ["TTL remaining", c.ttl !== null ? c.ttl + " s" : null],
+      ["Cache key", c.cache_key]
+    ]));
+    return section;
+  }
+
+  function sectionJudge(j) {
+    var section = makeSection("LLM as judge",
+      j.score !== null ? "score " + j.score : null, true);
+
+    if (j.score !== null) {
+      var score = el("div", "d-score", String(j.score));
+      score.style.color = j.score < 50 ? "var(--err-fg)" : "var(--ok-fg)";
+      section._body.appendChild(score);
+      section._body.appendChild(el("div", "d-subtle", "accuracy score out of 100"));
+      section._body.appendChild(el("div", null, " "));
+    }
+
+    section._body.appendChild(metrics([
+      ["Judge provider", j.provider],
+      ["Judge model", j.response_model || j.request_model],
+      ["Judge latency", fmtMs(j.llm_latency)],
+      ["Prompt tokens", fmtInt(j.prompt_tokens)],
+      ["Completion tokens", fmtInt(j.completion_tokens)],
+      ["Judge cost", fmtCost(j.cost)]
+    ]));
+
+    if (j.conversation && j.conversation.turns.length) {
+      section._body.appendChild(el("div", null, " "));
+      section._body.appendChild(el("div", "d-subtle", "Judge exchange"));
+      conversationNodes(j.conversation, section._body);
+    }
+    return section;
+  }
+
+  // ---- MCP / A2A --------------------------------------------------------
+
+  function jsonBlock(value, openTo) {
+    var tree = el("div", "jt");
+    tree.appendChild(buildNode(null, value, 0, openTo === undefined ? 1 : openTo));
+    return tree;
+  }
+
+  function rpcShell(call) {
+    var wrap = el("div", "rpc-call");
+    var head = el("div", "rpc-call__head");
+    if (call.method) head.appendChild(el("span", "rpc-method", call.method));
+    if (call.tool_name) head.appendChild(el("span", "rpc-tool", call.tool_name));
+    if (call.error) {
+      head.appendChild(el("span", "d-chip d-chip--err",
+        call.error_code !== null && call.error_code !== undefined
+          ? call.error_code + " " + call.error : call.error));
+    }
+    if (typeof call.latency === "number") {
+      head.appendChild(el("span", "rpc-lat", fmtMs(call.latency)));
+    }
+    wrap.appendChild(head);
+    var body = el("div", "rpc-call__body");
+    wrap.appendChild(body);
+    wrap._body = body;
+    return wrap;
+  }
+
+  function labelled(target, label, node) {
+    target.appendChild(el("div", "rpc-label", label));
+    target.appendChild(node);
+  }
+
+  function sectionMcp(m) {
+    var n = m.calls.length;
+    var section = makeSection("MCP", n ? n + (n === 1 ? " call" : " calls") : "session", true);
+    var body = section._body;
+
+    if (m.session_id) {
+      body.appendChild(metrics([["Session", m.session_id]]));
+      body.appendChild(el("div", null, " "));
+    }
+
+    if (!n && m.session_id) {
+      // GET opens the SSE stream, DELETE tears the session down; neither
+      // carries a JSON-RPC call.
+      body.appendChild(el("div", "d-subtle",
+        "No JSON-RPC call on this request \u2014 session transport only."));
+    }
+
+    m.calls.forEach(function (call) {
+      var wrap = rpcShell(call);
+      var b = wrap._body;
+
+      if (call.error) {
+        b.appendChild(el("div", "rpc-error",
+          "JSON-RPC error " + (call.error_code !== null ? call.error_code : "") + ": " + call.error));
+      }
+
+      if (call.method === "initialize") {
+        b.appendChild(metrics([
+          ["Client", call.client_info ? (call.client_info.name || "?") + " " + (call.client_info.version || "") : null],
+          ["Server", call.server_info ? (call.server_info.name || "?") + " " + (call.server_info.version || "") : null],
+          ["Protocol", call.protocol_version]
+        ]));
+      } else if (call.catalogue) {
+        var kindLabel = { tools: "Tools", resources: "Resources", prompts: "Prompts",
+                          resourceTemplates: "Resource templates" }[call.catalogue_kind] || "Items";
+        labelled(b, kindLabel + " (" + call.catalogue.length + ")", table(
+          ["Name", "Description", "Input"],
+          call.catalogue.map(function (item) {
+            var schema = item.inputSchema && item.inputSchema.properties;
+            return [
+              el("code", null, item.name || item.uri || "?"),
+              (item.annotations && item.annotations.title) || item.description || null,
+              schema ? el("code", null, Object.keys(schema).join(", ") || "\u2014") : null
+            ];
+          })
+        ));
+      } else if (call.method === "tools/call") {
+        var args = (call.params && call.params.arguments) || {};
+        var keys = Object.keys(args);
+        labelled(b, "Arguments", keys.length ? jsonBlock(args, 2)
+                                             : el("div", "d-subtle", "none"));
+        if (call.content) {
+          // Tool output is often JSON inside a text part, so keep the tree
+          // available while defaulting to the raw text.
+          var parsed = tryParse(call.content);
+          labelled(b, call.is_error ? "Result (isError)" : "Result",
+                   parsed !== null ? jsonBlock(parsed, 2) : el("div", "rpc-text", call.content));
+        }
+      }
+
+      // Params are shown even on an error -- knowing what was asked for is
+      // the whole point when a method comes back unsupported.
+      if (call.method !== "initialize" && !call.catalogue && call.method !== "tools/call") {
+        if (call.params) labelled(b, "Params", jsonBlock(call.params, 2));
+        if (call.result !== null && call.result !== undefined) {
+          labelled(b, "Result", jsonBlock(call.result, 1));
+        } else if (!call.params) {
+          b.appendChild(el("div", "d-subtle", "Notification \u2014 no result."));
+        }
+      }
+      body.appendChild(wrap);
+    });
+
+    if (m.audit.length) {
+      body.appendChild(el("div", "rpc-label", "Authorization audit"));
+      body.appendChild(table(
+        ["Primitive", "Name", "Action", "Scope", "Consumer"],
+        m.audit.map(function (a) {
+          var action = el("span", "d-chip d-chip--" + (a.action === "allow" ? "ok" : "err"),
+                          (a.action || "?").toUpperCase());
+          return [a.primitive, el("code", null, a.primitive_name || "\u2014"),
+                  action, a.scope, a.consumer_name];
+        })
+      ));
+    }
+    return section;
+  }
+
+  function sectionA2a(a) {
+    var n = a.calls.length;
+    var section = makeSection("A2A", n ? n + (n === 1 ? " task" : " tasks") : null, true);
+    var body = section._body;
+
+    a.calls.forEach(function (call) {
+      var wrap = rpcShell(call);
+      var b = wrap._body;
+
+      if (call.error) {
+        b.appendChild(el("div", "rpc-error", "JSON-RPC error: " + call.error));
+      }
+
+      b.appendChild(metrics([
+        ["State", (call.state || call.task_state || "").toUpperCase() || null],
+        ["Binding", call.binding],
+        ["Task ID", call.task_id],
+        ["Context ID", call.context_id],
+        ["Completed", call.state_timestamp]
+      ]));
+
+      if (call.turns && call.turns.length) {
+        b.appendChild(el("div", "rpc-label", "Exchange"));
+        call.turns.forEach(function (t) {
+          b.appendChild(turnNode({ role: t.role, content: t.content }));
+        });
+      }
+
+      (call.artifacts || []).forEach(function (art) {
+        labelled(b, "Artifact \u00b7 " + (art.name || "unnamed"),
+                 el("div", "rpc-text", art.content || "\u2014"));
+      });
+
+      body.appendChild(wrap);
+    });
+    return section;
+  }
+
+  function sectionTargets(targets) {
+    var section = makeSection("Targets tried", String(targets.length), false);
+    section._body.appendChild(table(
+      ["Host", "Provider", "Model", "Upstream"],
+      targets.map(function (t) {
+        return [
+          el("code", null, (t.host || "?") + (t.port ? ":" + t.port : "")),
+          t.provider, t.model,
+          el("code", null, (t.upstream_scheme ? t.upstream_scheme + "://" : "") + (t.upstream_uri || ""))
+        ];
+      })
+    ));
+    return section;
+  }
+
+  function sectionRaw(payload) {
+    var section = makeSection("Raw payload", null, false);
+    var tree = el("div", "jt");
+    tree.appendChild(buildNode(null, payload, 0, 1));
+    section._body.appendChild(tree);
+    return section;
+  }
+
+  function renderDetail(data) {
+    var d = data.detail || {};
+    var frag = document.createDocumentFragment();
+
+    if (d.overview) frag.appendChild(sectionOverview(d.overview));
+    if (d.conversation) frag.appendChild(sectionConversation(d.conversation));
+    if (d.usage) frag.appendChild(sectionUsage(d.usage));
+    if (d.sanitizer) frag.appendChild(sectionSanitizer(d.sanitizer));
+    if (d.compressor) frag.appendChild(sectionCompressor(d.compressor));
+    if (d.cache) frag.appendChild(sectionCache(d.cache));
+    if (d.judge) frag.appendChild(sectionJudge(d.judge));
+    if (d.mcp) frag.appendChild(sectionMcp(d.mcp));
+    if (d.a2a) frag.appendChild(sectionA2a(d.a2a));
+    if (d.targets && d.targets.length) frag.appendChild(sectionTargets(d.targets));
+    frag.appendChild(sectionRaw(data.payload));
+    return frag;
+  }
+
+  function renderChips(chips) {
+    var wrap = document.getElementById("drawerChips");
+    wrap.innerHTML = "";
+    (chips || []).forEach(function (chip) {
+      wrap.appendChild(el("span", "d-chip d-chip--" + (chip.tone || "muted"), chip.label));
+    });
+  }
+
+  // ---- Drawer -----------------------------------------------------------
+
+  var drawer   = document.getElementById("drawer");
+  var scrim    = document.getElementById("scrim");
+  var body     = document.getElementById("drawerBody");
+  var titleEl  = document.getElementById("drawerTitle");
+  var metaEl   = document.getElementById("drawerMeta");
+  var rowsEl   = document.getElementById("logRows");
+  var current  = null;
+  var lastFocus = null;
+  var currentPayload = null;
+
+  function openDrawer(id, row) {
+    lastFocus = row;
+    if (current) current.classList.remove("is-open");
+    current = row;
+    row.classList.add("is-open");
+
+    drawer.classList.add("is-open");
+    scrim.classList.add("is-open");
+    drawer.setAttribute("aria-hidden", "false");
+    titleEl.textContent = "Request " + id;
+    metaEl.textContent = "";
+    document.getElementById("drawerChips").innerHTML = "";
+    body.innerHTML = "";
+    var status = document.createElement("div");
+    status.className = "drawer-status";
+    status.textContent = "Loading payload…";
+    body.appendChild(status);
+    document.getElementById("drawerClose").focus();
+
+    fetch("/api/logs/" + encodeURIComponent(id))
+      .then(function (r) {
+        if (!r.ok) throw new Error("Request " + id + " could not be loaded (" + r.status + ")");
+        return r.json();
+      })
+      .then(function (data) {
+        currentPayload = data.payload;
+        metaEl.textContent = formatTs(data.timestamp);
+        renderChips((data.detail || {}).chips);
+        var one = document.getElementById("btnExportOne");
+        one.href = "/api/export?ids=" + encodeURIComponent(data.id)
+                 + (redactBox && !redactBox.checked ? "&redact=0" : "");
+        body.innerHTML = "";
+        body.appendChild(renderDetail(data));
+      })
+      .catch(function (err) {
+        body.innerHTML = "";
+        var msg = document.createElement("div");
+        msg.className = "drawer-status";
+        msg.textContent = err.message;
+        body.appendChild(msg);
+      });
+  }
+
+  function closeDrawer() {
+    drawer.classList.remove("is-open");
+    scrim.classList.remove("is-open");
+    drawer.setAttribute("aria-hidden", "true");
+    if (current) { current.classList.remove("is-open"); }
+    body.innerHTML = "";
+    if (lastFocus) lastFocus.focus();
+    current = null;
+  }
+
+  if (rowsEl) {
+    rowsEl.addEventListener("click", function (ev) {
+      var row = ev.target.closest("tr[data-id]");
+      if (row) openDrawer(row.getAttribute("data-id"), row);
+    });
+    rowsEl.addEventListener("keydown", function (ev) {
+      if (ev.key !== "Enter" && ev.key !== " ") return;
+      var row = ev.target.closest("tr[data-id]");
+      if (row) { ev.preventDefault(); openDrawer(row.getAttribute("data-id"), row); }
+    });
+  }
+
+  document.getElementById("drawerClose").addEventListener("click", closeDrawer);
+  scrim.addEventListener("click", closeDrawer);
+  document.addEventListener("keydown", function (ev) {
+    if (ev.key === "Escape" && drawer.classList.contains("is-open")) closeDrawer();
+  });
+
+  document.getElementById("btnExpand").addEventListener("click", function () {
+    body.querySelectorAll(".d-section__head").forEach(function (h) {
+      if (h.getAttribute("aria-expanded") === "false") h.click();
+    });
+  });
+
+  document.getElementById("btnCollapse").addEventListener("click", function () {
+    body.querySelectorAll(".d-section__head").forEach(function (h) {
+      if (h.getAttribute("aria-expanded") === "true") h.click();
+    });
+  });
+
+
+
+  // ---- Sidebar summary --------------------------------------------------
+  // Fetched after the page renders so aggregates never delay the table, and
+  // scoped to the filters currently in the URL rather than the whole database.
+
+  var summaryPanel = document.getElementById("summaryPanel");
+
+  function filterLink(key, value) {
+    var qs = new URLSearchParams(window.location.search);
+    qs.set(key, value);
+    qs.delete("page");
+    return "?" + qs.toString();
+  }
+
+  function summarySection(title, scope) {
+    var sec = el("div", "sum-sec");
+    var h = el("h3", null, title);
+    if (scope) h.appendChild(el("span", "sum-scope", " \u00b7 " + scope));
+    sec.appendChild(h);
+    return sec;
+  }
+
+  function statsNode(stats) {
+    var grid = el("div", "sum-stats");
+    stats.forEach(function (stat) {
+      var tone = stat.tone === "err" ? " is-err" : (stat.tone === "ok" ? " is-ok" : "");
+      var cell = el("div", "sum-stat" + tone + (stat.wide ? " is-wide" : ""));
+      cell.appendChild(el("div", "v", stat.value));
+      cell.appendChild(el("div", "k", stat.label));
+      if (stat.sub) cell.appendChild(el("div", "sub", stat.sub));
+      grid.appendChild(cell);
+    });
+    return grid;
+  }
+
+  function mixNode(items) {
+    var frag = document.createDocumentFragment();
+    var bar = el("div", "sum-mixbar");
+    items.forEach(function (item) {
+      var seg = el("i", "swatch-" + (item.color || "api"));
+      seg.style.width = item.pct + "%";
+      bar.appendChild(seg);
+    });
+    frag.appendChild(bar);
+
+    var legend = el("div", "sum-legend");
+    items.forEach(function (item) {
+      var clickable = !!item.key;
+      var row = el(clickable ? "button" : "div", "sum-lrow");
+      if (clickable) {
+        row.type = "button";
+        row.title = "Filter by " + item.label;
+        row.addEventListener("click", function () {
+          window.location.href = filterLink(item.key, item.filter);
+        });
+      }
+      row.appendChild(el("i", "sum-dot swatch-" + (item.color || "api")));
+      row.appendChild(el("span", null, item.label));
+      row.appendChild(el("span", "sum-lval", item.value));
+      legend.appendChild(row);
+    });
+    frag.appendChild(legend);
+    return frag;
+  }
+
+  function barsNode(items, accent) {
+    var wrap = el("div", "sum-bars");
+    items.forEach(function (item) {
+      var row = el("button", "sum-bar");
+      row.type = "button";
+      row.title = "Filter by " + item.label;
+      var top = el("div", "top");
+      top.appendChild(el("span", null, item.label));
+      top.appendChild(el("span", null, item.value));
+      row.appendChild(top);
+      var track = el("div", "sum-track");
+      var fill = el("div", "sum-fill" + (accent === "alt" ? " is-alt" : ""));
+      fill.style.width = item.pct + "%";
+      track.appendChild(fill);
+      row.appendChild(track);
+      row.addEventListener("click", function () {
+        window.location.href = filterLink(item.key, item.filter);
+      });
+      wrap.appendChild(row);
+    });
+    return wrap;
+  }
+
+  function renderSummary(data) {
+    summaryPanel.innerHTML = "";
+    if (data.empty) {
+      var sec = summarySection("In view", data.scope);
+      sec.appendChild(el("div", "sum-empty", "Nothing matches these filters."));
+      summaryPanel.appendChild(sec);
+      return;
+    }
+
+    var head = summarySection("In view", data.scope);
+    head.appendChild(statsNode(data.stats));
+    summaryPanel.appendChild(head);
+
+    data.panels.forEach(function (panel) {
+      var sec = summarySection(panel.title, null);
+      if (panel.kind === "mix") sec.appendChild(mixNode(panel.items));
+      else sec.appendChild(barsNode(panel.items, panel.accent));
+      summaryPanel.appendChild(sec);
+    });
+  }
+
+  if (summaryPanel) {
+    fetch("/api/summary" + window.location.search)
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (data) { if (data) renderSummary(data); })
+      .catch(function () { /* the sidebar is supplementary; stay quiet */ });
+  }
+
+  // ---- Type-scoped filters ---------------------------------------------
+  // Provider/Model only mean something for LLM traffic, Method/Tool only for
+  // MCP and A2A. Hide what does not apply and reset it, so switching Type
+  // cannot leave a stale value that silently returns nothing. The server
+  // applies the same rules, so a shared URL behaves identically.
+
+  var typeSelect  = document.getElementById("typeFilter");
+  var scopedRow   = document.getElementById("filtersScoped");
+  var featureSel  = document.getElementById("featureFilter");
+
+  function applies(node, logType) {
+    var types = node.getAttribute("data-types");
+    if (!types) return true;
+    if (logType === "all") return true;
+    return types.split(/\s+/).indexOf(logType) >= 0;
+  }
+
+  function syncScopedFilters() {
+    if (!typeSelect || !scopedRow) return;
+    var logType = typeSelect.value;
+    var visible = 0;
+
+    scopedRow.querySelectorAll(".field-group[data-types]").forEach(function (group) {
+      var show = applies(group, logType);
+      group.hidden = !show;
+      if (show) { visible++; return; }
+      var select = group.querySelector("select");
+      if (select) select.value = "all";
+    });
+
+    if (featureSel) {
+      var anyOption = false;
+      featureSel.querySelectorAll("option[data-types]").forEach(function (opt) {
+        var show = applies(opt, logType);
+        opt.hidden = !show;
+        opt.disabled = !show;
+        if (show) anyOption = true;
+        if (!show && opt.selected) featureSel.value = "all";
+      });
+      var featureGroup = document.getElementById("featureGroup");
+      if (featureGroup) {
+        featureGroup.hidden = !anyOption;
+        if (!anyOption) featureSel.value = "all";
+        else visible++;
+      }
+    }
+
+    // An empty bordered row looks like a bug; drop it entirely.
+    scopedRow.hidden = visible === 0;
+  }
+
+  if (typeSelect) {
+    typeSelect.addEventListener("change", syncScopedFilters);
+    syncScopedFilters();
+  }
+
+  // ---- Selection & export ----------------------------------------------
+  // Selection is per page: the table is paginated server-side, so navigating
+  // reloads. "Export filtered" covers the whole result set instead.
+
+  var selectBar   = document.getElementById("selectBar");
+  var selectCount = document.getElementById("selectCount");
+  var pickAll     = document.getElementById("pickAll");
+  var redactBox   = document.getElementById("redactToggle");
+
+  function picked() {
+    return Array.prototype.slice.call(document.querySelectorAll(".row-pick:checked"))
+      .map(function (b) { return b.value; });
+  }
+
+  function refreshSelection() {
+    var n = picked().length;
+    selectBar.hidden = n === 0;
+    selectCount.textContent = n + (n === 1 ? " log selected" : " logs selected");
+    var boxes = document.querySelectorAll(".row-pick");
+    if (pickAll) {
+      pickAll.checked = n > 0 && n === boxes.length;
+      pickAll.indeterminate = n > 0 && n < boxes.length;
+    }
+  }
+
+  function exportUrl(params) {
+    var qs = new URLSearchParams(window.location.search);
+    qs.delete("page");
+    Object.keys(params).forEach(function (k) { qs.set(k, params[k]); });
+    if (redactBox && !redactBox.checked) qs.set("redact", "0"); else qs.delete("redact");
+    return "/api/export?" + qs.toString();
+  }
+
+  if (rowsEl) {
+    rowsEl.addEventListener("change", function (ev) {
+      if (ev.target.classList.contains("row-pick")) refreshSelection();
+    });
+    // A checkbox click must not also open the drawer.
+    rowsEl.addEventListener("click", function (ev) {
+      if (ev.target.classList.contains("row-pick")) ev.stopPropagation();
+    }, true);
+  }
+
+  if (pickAll) {
+    pickAll.addEventListener("click", function (ev) { ev.stopPropagation(); });
+    pickAll.addEventListener("change", function () {
+      var on = pickAll.checked;
+      document.querySelectorAll(".row-pick").forEach(function (b) { b.checked = on; });
+      refreshSelection();
+    });
+  }
+
+  document.getElementById("btnClearSelect").addEventListener("click", function () {
+    document.querySelectorAll(".row-pick").forEach(function (b) { b.checked = false; });
+    refreshSelection();
+  });
+
+  document.getElementById("btnExportSelected").addEventListener("click", function () {
+    var ids = picked();
+    if (!ids.length) return;
+    window.location.href = exportUrl({ ids: ids.join(",") });
+  });
+
+  document.getElementById("btnExportAll").addEventListener("click", function (ev) {
+    ev.preventDefault();
+    window.location.href = exportUrl({});
+  });
+
+  if (redactBox) {
+    redactBox.addEventListener("click", function (ev) { ev.stopPropagation(); });
+  }
+
+  refreshSelection();
+
+  document.getElementById("btnCopy").addEventListener("click", function () {
+    if (currentPayload === null) return;
+    var btn = this;
+    var text = JSON.stringify(currentPayload, null, 2);
+    var done = function () {
+      btn.textContent = "Copied";
+      setTimeout(function () { btn.textContent = "Copy JSON"; }, 1500);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, function () { btn.textContent = "Copy failed"; });
+    } else {
+      btn.textContent = "Copy unavailable";
+    }
+  });
+})();
+</script>
+</body>
+</html>
