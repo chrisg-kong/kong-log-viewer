@@ -1,5 +1,6 @@
-from flask import Flask, request, g, render_template, jsonify, abort, Response
-import sqlite3, json, os, math, re, time
+from flask import (Flask, request, g, render_template, jsonify, abort, Response,
+                   session, redirect, url_for)
+import sqlite3, json, os, math, re, time, hmac, secrets
 from datetime import datetime, timedelta, timezone
 
 import detail as detail_builder
@@ -65,6 +66,81 @@ SENSITIVE_HEADERS = {
 }
 
 app = Flask(__name__)
+
+# ---------------------------------------------------------------- auth
+# Credentials come from the environment (docker run -e ...). The app refuses
+# to start without them, so it can never come up unauthenticated.
+AUTH_USER = os.environ.get("VIEWER_USERNAME", "")
+AUTH_PASS = os.environ.get("VIEWER_PASSWORD", "")
+if not AUTH_USER or not AUTH_PASS:
+    raise SystemExit("VIEWER_USERNAME and VIEWER_PASSWORD must be set")
+
+# Sessions are signed with SECRET_KEY. If unset, a random key is generated per
+# start, which simply signs everyone out when the container restarts.
+app.secret_key = os.environ.get("SECRET_KEY") or secrets.token_hex(32)
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=os.environ.get("SESSION_COOKIE_SECURE", "").lower() in ("1", "true", "yes"),
+    PERMANENT_SESSION_LIFETIME=timedelta(hours=int(os.environ.get("SESSION_HOURS", "12"))),
+)
+
+# Endpoints reachable without a session. /logs is the Kong http-log ingest
+# target (a plugin can't do an interactive login) and only ever writes.
+PUBLIC_ENDPOINTS = {"login", "healthz", "ingest", "static"}
+
+
+def _creds_ok(user, pw):
+    # Evaluate both comparisons so timing doesn't reveal which field was wrong.
+    u = hmac.compare_digest(user.encode(), AUTH_USER.encode())
+    p = hmac.compare_digest(pw.encode(), AUTH_PASS.encode())
+    return u and p
+
+
+def _safe_next(target):
+    # Only allow same-site relative paths, never //host or scheme:// targets.
+    if target and target.startswith("/") and not target.startswith("//") and "\\" not in target:
+        return target
+    return url_for("index")
+
+
+@app.before_request
+def require_login():
+    if request.endpoint in PUBLIC_ENDPOINTS or session.get("auth") is True:
+        return None
+    if request.path.startswith("/api/"):
+        return jsonify(error="authentication required"), 401
+    nxt = request.full_path.rstrip("?") if request.method == "GET" else "/"
+    return redirect(url_for("login", next=nxt))
+
+
+@app.after_request
+def no_store(resp):
+    resp.headers.setdefault("Cache-Control", "no-store")
+    resp.headers.setdefault("X-Frame-Options", "DENY")
+    return resp
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if session.get("auth") is True:
+        return redirect(_safe_next(request.args.get("next")))
+    error = None
+    if request.method == "POST":
+        if _creds_ok(request.form.get("username", ""), request.form.get("password", "")):
+            session.clear()
+            session["auth"] = True
+            session.permanent = True
+            return redirect(_safe_next(request.form.get("next")))
+        time.sleep(1)  # blunt brute-force speed bump
+        error = "Incorrect username or password."
+    return render_template("login.html", error=error, next=request.args.get("next", request.form.get("next", ""))), (401 if error else 200)
+
+
+@app.post("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
 
 
 @app.template_filter("fmtts")

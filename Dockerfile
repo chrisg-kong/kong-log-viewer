@@ -19,6 +19,10 @@ ENV DB_DIR=/app/data
 RUN mkdir -p $DB_DIR && chmod 777 $DB_DIR
 VOLUME [ "/app/data" ]
 
+# Required at runtime: docker run -e VIEWER_USERNAME=... -e VIEWER_PASSWORD=...
+# Optional: SECRET_KEY (keeps sessions across restarts), SESSION_HOURS (default 12),
+# SESSION_COOKIE_SECURE=true (when served over HTTPS)
+
 # expose new port
 EXPOSE 5015
 
