@@ -52,8 +52,15 @@ docker run -d \
   --name kong-log-viewer \
   -p 5015:5015 \
   -v kong_logs_data:/app/data \
+  -e VIEWER_USERNAME=admin \
+  -e VIEWER_PASSWORD='choose-a-strong-password' \
   kong-log-viewer
 ```
+
+The container will not start unless `VIEWER_USERNAME` and `VIEWER_PASSWORD` are
+set. Optional: `SECRET_KEY` (keeps users signed in across restarts),
+`SESSION_HOURS` (default 12), and `SESSION_COOKIE_SECURE=true` when serving over
+HTTPS.
 
 Open <http://localhost:5015>.
 
@@ -78,8 +85,9 @@ config.logging.log_payloads:   true
 Without `log_payloads` you still get models, tokens and cost — just no
 conversation.
 
-> Keep it on a trusted network. The logs contain full prompts and request
-> headers, and there is no authentication on the UI.
+> The UI and API sit behind a login. `POST /logs` (the ingest endpoint) and
+> `/healthz` remain open so Kong can deliver logs, so keep the viewer on a
+> trusted network and put it behind HTTPS if exposed.
 
 ## Using it
 
@@ -110,7 +118,8 @@ survive:
 ```
 docker build -t kong-log-viewer .
 docker stop kong-log-viewer && docker rm kong-log-viewer
-docker run -d --name kong-log-viewer -p 5015:5015 -v kong_logs_data:/app/data kong-log-viewer
+docker run -d --name kong-log-viewer -p 5015:5015 -v kong_logs_data:/app/data \
+  -e VIEWER_USERNAME=admin -e VIEWER_PASSWORD='...' kong-log-viewer
 ```
 
 ### Purging the logs

@@ -918,6 +918,9 @@
   <div class="sidebar-foot">
     Send logs to
     <code>POST /logs</code>
+    <form method="post" action="{{ url_for('logout') }}" style="margin-top:0.75rem">
+      <button type="submit" class="control btn-secondary">Sign out</button>
+    </form>
   </div>
 </aside>
 
